@@ -4,6 +4,7 @@ import io
 import time
 import pathlib
 import datetime
+import secrets
 from dotenv import load_dotenv
 import streamlit as st
 import yaml
@@ -86,24 +87,73 @@ def list_saved_reports():
     return reports
 
 
+# Helper to convert Streamlit secrets (AttrDict) to standard dictionary
+def to_clean_dict(obj):
+    if hasattr(obj, "items"):
+        return {str(k): to_clean_dict(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [to_clean_dict(v) for v in obj]
+    return obj
+
+
 # ================= AUTHENTICATION GATE =================
 enable_auth = os.getenv("ENABLE_AUTH", "true").lower() == "true"
 auth_file_path = pathlib.Path("config/auth.yaml")
+auth_example_path = pathlib.Path("config/auth.yaml.example")
 authenticator = None
+is_using_cloud_secrets = False
+auth_config = None
 
-if enable_auth and auth_file_path.exists():
-    try:
-        with open(auth_file_path, "r", encoding="utf-8") as f:
-            auth_config = yaml.safe_load(f)
+if enable_auth:
+    # 1. PRIORITY: Check Streamlit Cloud Secrets (no local auth.yaml file required)
+    if hasattr(st, "secrets") and "credentials" in st.secrets:
+        try:
+            auth_config = {
+                "credentials": to_clean_dict(st.secrets["credentials"]),
+                "cookie": to_clean_dict(st.secrets.get("cookie", {}))
+            }
+            is_using_cloud_secrets = True
+        except Exception as e:
+            st.warning(f"Could not parse credentials from Streamlit Secrets: {e}")
+
+    # 2. FALLBACK: Check local config/auth.yaml (or create from template)
+    if not auth_config:
+        if not auth_file_path.exists() and auth_example_path.exists():
+            import shutil
+            auth_file_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(auth_example_path, auth_file_path)
+
+        if auth_file_path.exists():
+            try:
+                with open(auth_file_path, "r", encoding="utf-8") as f:
+                    auth_config = yaml.safe_load(f)
+            except Exception as e:
+                st.warning(f"Could not load local authentication config: {e}")
+
+    # 3. Dynamic Cookie Secret & Authenticator Initialization
+    if auth_config and "credentials" in auth_config:
+        # Generate a fallback session key if none provided
+        if "_session_auth_cookie_key" not in st.session_state:
+            st.session_state["_session_auth_cookie_key"] = secrets.token_hex(32)
+
+        # Dynamic Cookie Secret: Checked from env variable, st.secrets, or config
+        cookie_key = (
+            os.getenv("AUTH_COOKIE_KEY")
+            or (hasattr(st, "secrets") and st.secrets.get("AUTH_COOKIE_KEY"))
+            or (hasattr(st, "secrets") and "cookie" in st.secrets and st.secrets["cookie"].get("key"))
+            or auth_config.get("cookie", {}).get("key")
+            or st.session_state["_session_auth_cookie_key"]
+        )
+
+        cookie_name = auth_config.get("cookie", {}).get("name", "market_research_auth_cookie")
+        expiry_days = float(auth_config.get("cookie", {}).get("expiry_days", 30.0))
 
         authenticator = stauth.Authenticate(
             credentials=auth_config["credentials"],
-            cookie_name=auth_config.get("cookie", {}).get("name", "market_research_auth_cookie"),
-            cookie_key=auth_config.get("cookie", {}).get("key", "market_research_auth_secret_cookie_key_2026"),
-            cookie_expiry_days=float(auth_config.get("cookie", {}).get("expiry_days", 30.0))
+            cookie_name=cookie_name,
+            cookie_key=cookie_key,
+            cookie_expiry_days=expiry_days
         )
-    except Exception as e:
-        st.warning(f"Could not load authentication config: {e}")
 
 if authenticator:
     auth_status = st.session_state.get("authentication_status")
@@ -128,8 +178,11 @@ if authenticator:
                 )
                 if email:
                     st.success(f"🎉 User **{username}** registered successfully! Switch to the **Sign In** tab to log in.")
-                    with open(auth_file_path, "w", encoding="utf-8") as f:
-                        yaml.safe_dump(auth_config, f, default_flow_style=False)
+                    if is_using_cloud_secrets:
+                        st.info("💡 Running via Streamlit Cloud Secrets. For permanent access across cloud restarts, update your Cloud Secrets.")
+                    elif auth_file_path.exists():
+                        with open(auth_file_path, "w", encoding="utf-8") as f:
+                            yaml.safe_dump(auth_config, f, default_flow_style=False)
             except Exception as e:
                 st.error(f"Registration error: {e}")
 

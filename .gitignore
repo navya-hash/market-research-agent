@@ -3,5 +3,7 @@
 __pycache__/
 *.pyc
 .DS_Store
+config/auth.yaml
+.streamlit/secrets.toml
 reports/*.md
 !reports/.gitkeep

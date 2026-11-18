@@ -71,8 +71,11 @@ market_reserach_agent/
 ├── pyproject.toml                 # Package configuration
 ├── run_ui.bat                     # Windows 1-click launcher
 ├── manage_users.py                # Admin CLI to list and add users
+├── .streamlit/
+│   └── secrets.toml.example       # Cloud Secrets template for Streamlit Cloud deployment
 ├── config/
-│   └── auth.yaml                  # Bcrypt-hashed credentials & session cookie config
+│   ├── auth.yaml.example          # Template credentials & session cookie config (tracked)
+│   └── auth.yaml                  # Local credentials & active users (gitignored)
 ├── reports/                       # Generated research reports (.md)
 │   └── .gitkeep
 ├── src/
@@ -204,12 +207,32 @@ All credentials are automatically salted and hashed with **Bcrypt** into `config
 1. Push your repository to **GitHub**.
 2. Visit [share.streamlit.io](https://share.streamlit.io/) and click **"Create app"**.
 3. Select your repository, branch (`main`), and set **Main file path** to `app.py`.
-4. Click **Advanced settings $\rightarrow$ Secrets**, and add your environment variables:
+4. Click **Advanced settings $\rightarrow$ Secrets**, and paste your configuration:
    ```toml
    MODEL = "openai/gpt-oss-120b"
    GROQ_API_KEY = "your_actual_groq_api_key"
    SERPER_API_KEY = "your_actual_serper_api_key"
-   ENABLE_AUTH = "true"
+   ENABLE_AUTH = true
+   AUTH_COOKIE_KEY = "generate_a_random_secret_string_here"
+
+   # Store credentials directly in Cloud Secrets (no auth.yaml file needed!)
+   [credentials.usernames.admin]
+   email = "admin@example.com"
+   failed_login_attempts = 0
+   first_name = "Admin"
+   last_name = "User"
+   logged_in = false
+   password = "$2b$12$4dWgGRlmRz3XTSCu1TGUquGwp98ymwKqF3dHizVPdIyHdjdALIVdi"
+   roles = ["admin"]
+
+   [credentials.usernames.analyst]
+   email = "analyst@example.com"
+   failed_login_attempts = 0
+   first_name = "Market"
+   last_name = "Analyst"
+   logged_in = false
+   password = "$2b$12$oAKPP8FBiczkb3NAS6LUFOlWbz8UNTvPpGNkBZFVcVWiv0QbkSMqm"
+   roles = ["analyst"]
    ```
 5. Click **Deploy!**
 

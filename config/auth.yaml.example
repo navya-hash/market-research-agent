@@ -1,0 +1,26 @@
+# Template for config/auth.yaml
+# Copy this file to config/auth.yaml and replace with your own hashed passwords.
+credentials:
+  usernames:
+    admin:
+      email: admin@example.com
+      failed_login_attempts: 0
+      first_name: Admin
+      last_name: User
+      logged_in: false
+      password: $2b$12$4dWgGRlmRz3XTSCu1TGUquGwp98ymwKqF3dHizVPdIyHdjdALIVdi
+      roles:
+        - admin
+    analyst:
+      email: analyst@example.com
+      failed_login_attempts: 0
+      first_name: Market
+      last_name: Analyst
+      logged_in: false
+      password: $2b$12$oAKPP8FBiczkb3NAS6LUFOlWbz8UNTvPpGNkBZFVcVWiv0QbkSMqm
+      roles:
+        - analyst
+cookie:
+  expiry_days: 30
+  key: REPLACE_WITH_A_SECURE_RANDOM_SECRET_KEY
+  name: market_research_auth_cookie
