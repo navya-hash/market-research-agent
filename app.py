@@ -96,6 +96,21 @@ def to_clean_dict(obj):
     return obj
 
 
+# Safe getter for Streamlit Cloud secrets (prevents StreamlitSecretNotFoundError when run locally)
+def safe_get_secret(key=None, default=None):
+    try:
+        if not hasattr(st, "secrets"):
+            return default
+        if key is None:
+            return st.secrets
+        if key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        # Thrown by Streamlit if no secrets.toml or cloud secrets exist
+        pass
+    return default
+
+
 # ================= AUTHENTICATION GATE =================
 enable_auth = os.getenv("ENABLE_AUTH", "true").lower() == "true"
 auth_file_path = pathlib.Path("config/auth.yaml")
@@ -105,18 +120,19 @@ is_using_cloud_secrets = False
 auth_config = None
 
 if enable_auth:
-    # 1. PRIORITY: Check Streamlit Cloud Secrets (no local auth.yaml file required)
-    if hasattr(st, "secrets") and "credentials" in st.secrets:
+    # 1. PRIORITY: Check Streamlit Cloud Secrets safely (no local file needed in cloud)
+    secrets_creds = safe_get_secret("credentials")
+    if secrets_creds:
         try:
             auth_config = {
-                "credentials": to_clean_dict(st.secrets["credentials"]),
-                "cookie": to_clean_dict(st.secrets.get("cookie", {}))
+                "credentials": to_clean_dict(secrets_creds),
+                "cookie": to_clean_dict(safe_get_secret("cookie", {}))
             }
             is_using_cloud_secrets = True
         except Exception as e:
             st.warning(f"Could not parse credentials from Streamlit Secrets: {e}")
 
-    # 2. FALLBACK: Check local config/auth.yaml (or create from template)
+    # 2. FALLBACK: Check local config/auth.yaml (or create from template if missing)
     if not auth_config:
         if not auth_file_path.exists() and auth_example_path.exists():
             import shutil
@@ -137,10 +153,14 @@ if enable_auth:
             st.session_state["_session_auth_cookie_key"] = secrets.token_hex(32)
 
         # Dynamic Cookie Secret: Checked from env variable, st.secrets, or config
+        cloud_cookie_key = safe_get_secret("AUTH_COOKIE_KEY")
+        cloud_cookie_dict = safe_get_secret("cookie")
+        if cloud_cookie_dict and hasattr(cloud_cookie_dict, "get"):
+            cloud_cookie_key = cloud_cookie_key or cloud_cookie_dict.get("key")
+
         cookie_key = (
             os.getenv("AUTH_COOKIE_KEY")
-            or (hasattr(st, "secrets") and st.secrets.get("AUTH_COOKIE_KEY"))
-            or (hasattr(st, "secrets") and "cookie" in st.secrets and st.secrets["cookie"].get("key"))
+            or cloud_cookie_key
             or auth_config.get("cookie", {}).get("key")
             or st.session_state["_session_auth_cookie_key"]
         )
@@ -195,10 +215,13 @@ with st.sidebar:
     st.image("https://img.icons8.com/fluency/96/bullish.png", width=64)
     st.title("Settings & Status")
 
-    if authenticator:
+    if authenticator and st.session_state.get("authentication_status"):
         user_name = st.session_state.get("name", "User")
         st.markdown(f"👤 Logged in as **{user_name}**")
-        authenticator.logout(button_name="Log out", location="sidebar")
+        try:
+            authenticator.logout(button_name="Log out", location="sidebar")
+        except Exception:
+            pass
         st.divider()
 
     st.subheader("🔑 API Key Status")
